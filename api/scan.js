@@ -1,111 +1,66 @@
-// api/scan.js v7 — Phase 4a + 4b
-import { kv } from "../lib/kv.js";
-import { scanNOAA }     from "../lib/scanner-noaa.js";
-import { scanAssessor } from "../lib/scanner-assessor.js";
-import { scanPermits }  from "../lib/scanner-permits.js";
-import { scanRedfin }   from "../lib/scanner-redfin.js";
+// api/scan.js — orchestrates all scanners, deduplicates, stores results in KV
+// GET /api/scan  — run a full scan (also called by daily cron)
+
+import { kv }          from "../lib/kv.js";
+import { scanNOAA }    from "../lib/scanner-noaa.js";
+import { scanRegrid }  from "../lib/scanner-regrid.js";
+
+const LEADS_KEY = "leads:v1";
+const TTL_SECS  = 60 * 60 * 24 * 7; // 7 days
 
 export default async function handler(req, res) {
-  if (req.method!=="GET" && req.method!=="POST")
-    return res.status(405).json({error:"Method not allowed"});
+  res.setHeader("Access-Control-Allow-Origin", "*");
 
-  const start=Date.now();
-  console.log(`\n=== Roof Intelligence v7 Scan: ${new Date().toISOString()} ===`);
-  console.log(`Territory: 23 towns — Southern NH + Northern MA`);
-  console.log(`Primary: VGSI assessor (18 towns) + NH GRANIT fallback (5 new towns)`);
-  console.log(`Supplemental: NOAA storm alerts, Redfin stale listings, permit clusters`);
+  const start = Date.now();
+  console.log("Scan started");
 
-  // 1. NOAA first — storm zones feed into assessor scoring
-  console.log("\n[1/5] NOAA weather alerts...");
-  let noaaLeads=[], activeZones=[];
   try {
-    const r=await scanNOAA();
-    noaaLeads=r.leads; activeZones=r.activeZoneCodes;
-    console.log(`  → ${noaaLeads.length} storm leads, ${activeZones.length} active zones`);
-  } catch(e) { console.error("NOAA fatal:",e.message); }
+    // ── 1. NOAA storm zones ───────────────────────────────────
+    console.log("[1/2] NOAA storm zones...");
+    const activeStormZones = await scanNOAA();
 
-  // 2. Assessor — VGSI primary, GRANIT fallback for zero-return towns + 5 new towns
-  console.log("\n[2/5] Assessor scan (VGSI primary + GRANIT fallback)...");
-  let parcels=[], subdivisions=[];
-  try {
-    const r=await scanAssessor({activeStormZones:activeZones,geocode:true});
-    parcels=r.parcels||[]; subdivisions=r.subdivisions||[];
-    console.log(`  → ${parcels.length} parcels, ${subdivisions.length} subdivisions detected`);
-  } catch(e) { console.error("Assessor fatal:",e.message); }
+    // ── 2. Regrid parcel scan ─────────────────────────────────
+    console.log("[2/2] Regrid parcel scan...");
+    const { parcels, subdivisions } = await scanRegrid({ activeStormZones });
 
-  // 3. Supplemental scanners in parallel
-  console.log("\n[3-4/4] Permits, Redfin (supplemental)...");
-  const [permitLeads,redfinLeads] =
-    await Promise.allSettled([scanPermits(),scanRedfin()])
-    .then(rs=>rs.map((r,i)=>{
-      if(r.status==="fulfilled") return r.value;
-      console.error(["permits","redfin"][i],"fatal:",r.reason?.message);
-      return [];
-    }));
-
-  // Count GRANIT parcels separately for logging
-  const granitCount  = parcels.filter(p=>p.source==="NH GRANIT").length;
-  const vgsiCount    = parcels.filter(p=>p.source==="VGSI Assessor").length;
-
-  console.log(`\n--- Source breakdown ---`);
-  console.log(`  NOAA storm:          ${noaaLeads.length}`);
-  console.log(`  Subdivisions:        ${subdivisions.length} (covering ~${subdivisions.reduce((s,d)=>s+d.houseCount,0)} homes)`);
-  console.log(`  VGSI parcels:        ${vgsiCount}`);
-  console.log(`  GRANIT parcels:      ${granitCount}`);
-  console.log(`  Permit clusters:     ${permitLeads.length}`);
-  console.log(`  Redfin listings:     ${redfinLeads.length}`);
-
-  // Deduplicate — subdivisions first (highest value)
-  const seen=new Set();
-  const deduped=[
-    ...noaaLeads,...subdivisions,...parcels,...permitLeads,...redfinLeads
-  ].filter(l=>{
-    const key=String(l.id);
-    if(seen.has(key)) return false;
-    seen.add(key); return true;
-  });
-
-  // Merge contact statuses
-  try {
-    for(let i=0;i<deduped.length;i+=100) {
-      const chunk=deduped.slice(i,i+100);
-      const values=await kv.mget(...chunk.map(l=>`contact:${l.id}`));
-      values.forEach((v,j)=>{if(v){deduped[i+j].contact=v.contacted??false;deduped[i+j].contactedAt=v.updatedAt??null;}});
+    // ── 3. Deduplicate by address ─────────────────────────────
+    const seen  = new Set();
+    const leads = [];
+    for (const p of parcels) {
+      const key = (p.address + p.zip).toLowerCase().replace(/\s/g, "");
+      if (!seen.has(key)) {
+        seen.add(key);
+        leads.push(p);
+      }
     }
-  } catch(e) { console.error("Contact merge:",e.message); }
 
-  deduped.sort((a,b)=>b.score-a.score);
+    // ── 4. Store in KV ────────────────────────────────────────
+    const payload = {
+      leads,
+      subdivisions,
+      generatedAt:  new Date().toISOString(),
+      activeStormZones,
+    };
+    await kv.set(LEADS_KEY, JSON.stringify(payload), { ex: TTL_SECS });
 
-  const payload={
-    generated:new Date().toISOString(),
-    scanDurationMs:Date.now()-start,
-    total:deduped.length,
-    storm_count:     deduped.filter(l=>l.type==="storm").length,
-    age_count:       deduped.filter(l=>l.type==="age").length,
-    realestate_count:deduped.filter(l=>l.type==="realestate").length,
-    social_count:    deduped.filter(l=>l.type==="social").length,
-    sources:{
-      noaa:        noaaLeads.length,
-      subdivisions:subdivisions.length,
-      assessor:    vgsiCount,
-      granit:      granitCount,
-      permits:     permitLeads.length,
-      redfin:      redfinLeads.length,
-    },
-    subdivisionHomesTotal: subdivisions.reduce((s,d)=>s+d.houseCount,0),
-    activeStormZones:activeZones,
-    leads:deduped,
-  };
+    const duration = ((Date.now() - start) / 1000).toFixed(1);
+    console.log(`Scan complete: ${leads.length} leads, ${subdivisions.length} subdivisions in ${duration}s`);
 
-  await kv.set("leads",payload,{ex:60*60*26});
-
-  const duration=((Date.now()-start)/1000).toFixed(1);
-  console.log(`\n=== Scan complete: ${deduped.length} total leads in ${duration}s ===\n`);
-
-  return res.status(200).json({
-    ok:true,count:deduped.length,sources:payload.sources,
-    subdivisionHomesTotal:payload.subdivisionHomesTotal,
-    activeStormZones:activeZones,generated:payload.generated,
-    durationSeconds:parseFloat(duration),
-  });
+    return res.status(200).json({
+      ok:      true,
+      count:   leads.length,
+      sources: {
+        noaa:          activeStormZones.length,
+        subdivisions:  subdivisions.length,
+        regrid:        parcels.length,
+      },
+      subdivisionHomesTotal: subdivisions.reduce((s, c) => s + c.homeCount, 0),
+      activeStormZones:      activeStormZones.length,
+      generated:             payload.generatedAt,
+      durationSeconds:       parseFloat(duration),
+    });
+  } catch (err) {
+    console.error("Scan error:", err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
 }
