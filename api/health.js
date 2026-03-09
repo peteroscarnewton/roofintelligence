@@ -5,7 +5,7 @@
 // Dashboard calls /api/health to show scanner status.
 // Scanners call markSuccess() / markFailure() after every run.
 
-import { kv } from "@vercel/kv";
+import { kv } from "./kv.js";
 
 export const SCANNERS = ["noaa", "assessor", "permits", "mls", "reddit"];
 

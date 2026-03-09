@@ -7,7 +7,7 @@
 // - Centroid fallback uses deterministic hash (same street = same pin always)
 // - Nominatim capped at 15/scan (not 30) — their rate limit is strict
 
-import { kv } from "@vercel/kv";
+import { kv } from "./kv.js";
 
 // ── NH STREET CACHE ───────────────────────────────────────────
 // Real street coordinates from OSM for our territory.

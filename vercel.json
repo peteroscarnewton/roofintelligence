@@ -1,5 +1,12 @@
 {
   "version": 2,
+  "functions": {
+    "api/scan.js":    { "maxDuration": 60 },
+    "api/leads.js":   { "maxDuration": 10 },
+    "api/canvass.js": { "maxDuration": 10 },
+    "api/contact.js": { "maxDuration": 10 },
+    "api/health.js":  { "maxDuration": 10 }
+  },
   "crons": [
     { "path": "/api/scan", "schedule": "0 12 * * *" }
   ],

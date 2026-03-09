@@ -13,7 +13,7 @@
 // You will never need to manually fix a broken API —
 // this job finds a working path automatically, or tells you exactly what broke.
 
-import { kv } from "@vercel/kv";
+import { kv } from "./kv.js";
 import { fetchWithTimeout, saveLastEndpoint } from "./resilient-fetch.js";
 import { markSuccess, markFailure, getHealth } from "./health.js";
 

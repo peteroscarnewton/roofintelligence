@@ -1,5 +1,5 @@
 // api/scan.js v7 — Phase 4a + 4b
-import { kv } from "@vercel/kv";
+import { kv } from "./kv.js";
 import { scanNOAA }     from "./scanner-noaa.js";
 import { scanAssessor } from "./scanner-assessor.js";
 import { scanPermits }  from "./scanner-permits.js";
