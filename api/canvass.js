@@ -11,7 +11,7 @@
 //   - "Start Canvassing" route builder (3a) — returns full list for route display
 //   - "Next Best House" card mode (3b)     — returns top 1 via ?limit=1
 
-import { kv } from "./kv.js";
+import { kv } from "../lib/kv.js";
 
 const DEG_PER_METER_LAT = 1 / 111320;
 const DEG_PER_METER_LNG = (lat) => 1 / (111320 * Math.cos(lat * Math.PI / 180));

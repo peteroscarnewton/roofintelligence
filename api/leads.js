@@ -1,7 +1,7 @@
 // api/leads.js v5 — Phase 3c
 // Merges contact status, outcome, notes, and history from KV into leads.
 
-import { kv } from "./kv.js";
+import { kv } from "../lib/kv.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");

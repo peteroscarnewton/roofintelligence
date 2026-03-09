@@ -1,9 +1,9 @@
 // api/scan.js v7 — Phase 4a + 4b
-import { kv } from "./kv.js";
-import { scanNOAA }     from "./scanner-noaa.js";
-import { scanAssessor } from "./scanner-assessor.js";
-import { scanPermits }  from "./scanner-permits.js";
-import { scanRedfin }   from "./scanner-redfin.js";
+import { kv } from "../lib/kv.js";
+import { scanNOAA }     from "../lib/scanner-noaa.js";
+import { scanAssessor } from "../lib/scanner-assessor.js";
+import { scanPermits }  from "../lib/scanner-permits.js";
+import { scanRedfin }   from "../lib/scanner-redfin.js";
 
 export default async function handler(req, res) {
   if (req.method!=="GET" && req.method!=="POST")

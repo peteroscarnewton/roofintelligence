@@ -4,7 +4,7 @@
 // outcome values: "no_answer" | "not_interested" | "quote_given" | "job_sold" | null
 // 90-day TTL on all records.
 
-import { kv } from "./kv.js";
+import { kv } from "../lib/kv.js";
 
 const VALID_OUTCOMES = new Set(["no_answer","not_interested","quote_given","job_sold"]);
 const TTL = 60 * 60 * 24 * 90; // 90 days
