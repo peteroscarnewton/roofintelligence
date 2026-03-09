@@ -5,7 +5,8 @@
     "api/leads.js":   { "maxDuration": 10 },
     "api/canvass.js": { "maxDuration": 10 },
     "api/contact.js": { "maxDuration": 10 },
-    "api/health.js":  { "maxDuration": 10 }
+    "api/health.js":  { "maxDuration": 10 },
+    "api/debug.js":   { "maxDuration": 15 }
   },
   "crons": [
     { "path": "/api/scan", "schedule": "0 12 * * *" }
