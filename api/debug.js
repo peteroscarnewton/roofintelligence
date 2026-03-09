@@ -1,56 +1,58 @@
-// api/debug.js — probe GRANIT folders + alternative NH parcel sources
+// api/debug.js — probe individual town assessor databases
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   const results = {};
 
   const probes = [
-    // Probe every GRANIT folder for parcel-like services
-    ["granit_apb",    "https://nhgeodata.unh.edu/nhgeodata/rest/services/APB?f=json"],
-    ["granit_lgn",    "https://nhgeodata.unh.edu/nhgeodata/rest/services/LGN?f=json"],
-    ["granit_topical","https://nhgeodata.unh.edu/nhgeodata/rest/services/Topical?f=json"],
-    ["granit_oc",     "https://nhgeodata.unh.edu/nhgeodata/rest/services/OC?f=json"],
-    ["granit_csd",    "https://nhgeodata.unh.edu/nhgeodata/rest/services/CSD?f=json"],
+    // Avitar Associates — used by many NH towns (different platform from VGSI)
+    ["avitar_bedford",    "https://www.avitarassociates.com/AssessorDatabase/bedfordnh/Search.aspx"],
+    ["avitar_amherst",    "https://www.avitarassociates.com/AssessorDatabase/amherstnh/Search.aspx"],
 
-    // NH ESRI Open Data Hub — public parcel layer
-    ["nh_esri_hub",   "https://opendata.arcgis.com/api/v3/datasets?filter%5BspatialReference%5D=4326&q=NH+parcels&page%5Bsize%5D=5"],
+    // Vision Government Solutions (different from VGSI)
+    ["vision_bedford",    "https://gis.vgsi.com/bedfordnh/"],
+    
+    // AxisGIS — another NH assessor platform
+    ["axisgis_bedford",   "https://www.axisgis.com/BedfordNH/"],
+    ["axisgis_amherst",   "https://www.axisgis.com/AmherstNH/"],
+    ["axisgis_api",       "https://www.axisgis.com/BedfordNH/api/parcels?limit=3"],
 
-    // ArcGIS Living Atlas — NH parcels
-    ["living_atlas",  "https://services.arcgis.com/rYz782eMbySr2srL/arcgis/rest/services/NH_Parcels/FeatureServer/0/query?where=1%3D1&f=json&resultRecordCount=1"],
+    // NH CAMA (Computer Assisted Mass Appraisal) open data
+    ["nh_cama",           "https://www.nhes.nh.gov/elmi/products/bp/documents/bedford-nhes.pdf"],
 
-    // Regrid — public parcel API (no key needed for basic queries)
-    ["regrid",        "https://app.regrid.com/api/v2/parcels/query?path=%2Fus%2Fnh%2Fhillsborough%2Fbedford&limit=3&fields=address,year_built&token="],
+    // Patriot Properties — another assessor platform used in NH
+    ["patriot_bedford",   "https://www.patriotproperties.com/bedfordnh/default.asp"],
+    ["patriot_api",       "https://www.patriotproperties.com/bedfordnh/api/search?yearBuiltMin=1994&yearBuiltMax=2008&use=101&limit=5"],
 
-    // NH PDIP open data
-    ["nh_pdip",       "https://nhpdip.unh.edu/arcgis/rest/services?f=json"],
+    // ProperlyNH — NH property search
+    ["properlync",        "https://www.properly.com/nh/bedford/"],
 
-    // VGSI direct page load (not the API — just see if the site responds at all)
-    ["vgsi_homepage", "https://gis.vgsi.com/bedfordnh/"],
+    // NH BTLA (Board of Tax and Land Appeals) open data
+    ["nh_btla",           "https://www.nh.gov/btla/documents/"],
 
-    // Try VGSI with full browser headers
-    ["vgsi_post_browser", "POST:https://gis.vgsi.com/bedfordnh/Search.aspx/GetSearchResults"],
+    // Spatialest (formerly Tyler Technologies) — used by Bedford NH specifically
+    ["spatialest_bedford","https://spatialest.com/nh/bedford/"],
+    ["tyler_bedford",     "https://assessor.tylerhost.net/apps/selfservice/search;jsessionid=?searchBy=address&town=bedford&state=nh"],
   ];
 
-  for (const [key, urlRaw] of probes) {
-    const isPost = urlRaw.startsWith("POST:");
-    const url = isPost ? urlRaw.slice(5) : urlRaw;
+  for (const [key, url] of probes) {
     try {
-      const opts = {
-        method: isPost ? "POST" : "GET",
+      const r = await fetch(url, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-          "Accept": "application/json, text/html, */*",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Origin": "https://roofintelligence.vercel.app",
-          "Referer": "https://roofintelligence.vercel.app/",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/json,*/*",
         },
-        ...(isPost ? { body: JSON.stringify({pageNum:1,pageSize:5,sortField:"Location",sortDir:"ASC",filter:{location:"",owner:"",minAcres:"0",maxAcres:"3",minValue:"",maxValue:"",minYearBuilt:"1994",maxYearBuilt:"2008",use:"101"}}) } : {}),
         signal: AbortSignal.timeout(8000),
-      };
-      if (isPost) opts.headers["Content-Type"] = "application/json";
-      const r = await fetch(url, opts);
+        redirect: "follow",
+      });
       const text = await r.text();
-      results[key] = { status: r.status, ok: r.ok, cors: r.headers.get("access-control-allow-origin"), preview: text.slice(0, 400) };
+      results[key] = {
+        status: r.status,
+        ok: r.ok,
+        finalUrl: r.url,
+        cors: r.headers.get("access-control-allow-origin"),
+        preview: text.slice(0, 300),
+      };
     } catch(e) {
       results[key] = { error: e.message };
     }
